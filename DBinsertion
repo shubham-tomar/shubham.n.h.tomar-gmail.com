@@ -1,0 +1,105 @@
+import pandas as pd
+from glob import glob
+import mysql.connector
+import numpy as np
+import uuid
+
+
+class Workbench():
+
+    def __init__(self):
+
+        self.cnx = mysql.connector.connect(user='root', password='1234',host='localhost',database='c1')
+        folderpath = "C:\\Users\\shubham\\Desktop\\colleges"
+        allfiles = glob(folderpath + "/*.xlsx")
+        # allfiles = [i.split('\\')[-1] for i in allfiles]
+        filecount=0
+        for file in allfiles:
+            filecount+=1
+            print(file)
+            xlsFile = pd.ExcelFile(file)
+            sheetsList = xlsFile.sheet_names
+            self.mycursor = self.cnx.cursor(buffered=True)
+            cid = uuid.uuid4().bytes
+            for sheet in sheetsList:
+                if sheet != 'dropdown':
+                    self.dfsheet = pd.read_excel(xlsFile, sheet)
+                    self.importContent(self.dfsheet, sheet,cid)
+                    self.cnx.commit()
+            self.fileDetails(file,cid,self.dfsheet)
+            self.cnx.commit()
+        print("Total Files Inserted: ",filecount)
+
+        self.cnx.close()
+
+
+    def importContent(self, dfsheet, tableName,cid):
+        print(tableName)
+        cols = dfsheet.columns.tolist()
+
+        dfsheet = dfsheet.astype(object).replace(np.nan, 'N/A')
+        dfsheet = dfsheet.astype(object).replace('Yes', 1)
+        dfsheet = dfsheet.astype(object).replace('No', 0)
+        cDate, uDate = self.formatDate(dfsheet)
+        dfsheet['created_date'] = cDate
+        dfsheet['updated_date'] = uDate
+        f_key = ''
+
+        if tableName == 'hostel_facility':
+            f_key = 'college_id_hostel_facil'
+
+        elif tableName == 'hostel_fee':
+            f_key = 'college_id_hostel_fee'
+
+        elif tableName == 'overall_course':
+            f_key = 'college_id_courses'
+
+        elif tableName == 'pictures':
+            f_key = 'college_id_pics'
+
+        elif tableName == 'placement_information':
+            f_key = 'college_id_placement_info'
+
+        elif tableName == 'social_media':
+            f_key = 'college_id'
+
+        elif tableName == 'sports_facility':
+            f_key = 'college_id_sports_facil'
+
+        elif tableName == 'class_infrastructure':
+            f_key = 'college_id_class_infra'
+
+        elif tableName == 'basic_information':
+            f_key = 'id'
+
+        else:
+            print("Unknown Table Name")
+            exit()
+
+        cols.insert(0, f_key)
+        colsList = "`,`".join([str(i) for i in cols])
+        for i, row in dfsheet.iterrows():
+            sql = "INSERT INTO `" + str(tableName)+"` (`" + colsList + "`) VALUES (%s," + "%s," * (len(row)-1) + "%s)"
+            row = tuple(row)
+            row = list(row)
+            row.insert(0,cid)
+            self.mycursor.execute(sql,tuple(row))
+
+    def fileDetails(self,file,cid,dfsheet):
+        file = file.split('\\')[-1]
+        cols = ['college_id','file_name','created_by','updated_by','created_date','updated_date']
+        colsList = "`,`".join([str(i) for i in cols])
+        sql = "INSERT INTO `file_details` (`" + colsList + "`) VALUES (%s,%s,%s,%s,%s,%s)"
+        cDate, uDate = self.formatDate(dfsheet)
+        creBY = dfsheet['created_by']
+        updBY = dfsheet['updated_by']
+        data = [cid,file,str(creBY[0]),str(updBY[0]),cDate[0],uDate[0]]
+        self.mycursor.execute(sql,tuple(data))
+
+
+    def formatDate(self,dfsheet):
+        c = dfsheet['created_date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+        u = dfsheet['updated_date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+        return c,u
+
+objWb = Workbench()
